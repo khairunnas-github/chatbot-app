@@ -1,4 +1,4 @@
+httpx
 streamlit
-openai>=1.0.0
 pyttsx3
 PyPDF2

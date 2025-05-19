@@ -1,22 +1,18 @@
 import streamlit as st
-from openai import OpenAI
+import httpx
 import pyttsx3
-import base64
 from io import BytesIO
 from PyPDF2 import PdfReader
 
-# Setup OpenAI Client
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+DEEPSEEK_API_KEY = st.secrets["DEEPSEEK_API_KEY"]
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
 
-# Setup halaman
-st.set_page_config(page_title="🤖 Chatbot AI", page_icon="💬")
-st.title("🤖 Chatbot AI Cerdas + Upload File + Suara")
+st.set_page_config(page_title="🤖 DeepSeek Chatbot", page_icon="💬")
+st.title("🤖 DeepSeek AI Chatbot + File Upload + Suara")
 
-# Inisialisasi sesi
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Tombol Reset
 with st.sidebar:
     st.header("⚙️ Opsi")
     if st.button("🔄 Reset Chat"):
@@ -34,61 +30,52 @@ if uploaded_file:
         file_text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
     st.success("✅ File berhasil dibaca!")
 
-# Tampilkan riwayat chat
+# Tampilkan chat history
 for msg in st.session_state.messages:
-    is_user = msg["role"] == "user"
     with st.chat_message(msg["role"]):
-        bubble_color = "#DCF8C6" if is_user else "#F1F0F0"
-        align = "right" if is_user else "left"
-        st.markdown(
-            f"<div style='text-align: {align}; background-color: {bubble_color}; padding: 10px; border-radius: 10px; margin: 5px 0;'>{msg['content']}</div>",
-            unsafe_allow_html=True
-        )
+        st.markdown(msg["content"])
 
-# Input pengguna
+# Input chat
 if prompt := st.chat_input("Ketik sesuatu..."):
 
-    # Tambahkan konteks file jika ada
     if file_text:
         prompt = f"Berdasarkan file berikut:\n{file_text[:3000]}\n\nPertanyaan: {prompt}"
 
-    # Simpan pesan user
     st.session_state.messages.append({"role": "user", "content": prompt})
-
-    # Tampilkan pesan user
     with st.chat_message("user"):
-        st.markdown(
-            f"<div style='text-align: right; background-color: #DCF8C6; padding: 10px; border-radius: 10px; margin: 5px 0;'>{prompt}</div>",
-            unsafe_allow_html=True
-        )
+        st.markdown(prompt)
 
-    # Kirim ke OpenAI
     with st.chat_message("assistant"):
-        with st.spinner("🤖 Bot sedang mengetik..."):
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
+        with st.spinner("🤖 DeepSeek sedang merespons..."):
+
+            # Panggil DeepSeek API
+            headers = {
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json"
+            }
+
+            body = {
+                "model": "deepseek-chat",  # Atau deepseek-coder / deepseek-v2
+                "messages": [
                     {"role": m["role"], "content": m["content"]}
                     for m in st.session_state.messages
-                ]
-            )
-            reply = response.choices[0].message.content
+                ],
+                "temperature": 0.7
+            }
 
-            # Tampilkan balasan
-            st.markdown(
-                f"<div style='text-align: left; background-color: #F1F0F0; padding: 10px; border-radius: 10px; margin: 5px 0;'>{reply}</div>",
-                unsafe_allow_html=True
-            )
+            try:
+                response = httpx.post(DEEPSEEK_API_URL, headers=headers, json=body)
+                response.raise_for_status()
+                reply = response.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                reply = f"❌ Error: {str(e)}"
 
-            # Tambahkan ke chat history
+            st.markdown(reply)
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
-            # Text to Speech
+            # TTS (optional)
             tts_engine = pyttsx3.init()
             tts_engine.save_to_file(reply, "bot_audio.mp3")
             tts_engine.runAndWait()
-
-            # Putar audio
-            with open("bot_audio.mp3", "rb") as audio_file:
-                audio_bytes = audio_file.read()
-                st.audio(audio_bytes, format="audio/mp3")
+            with open("bot_audio.mp3", "rb") as f:
+                st.audio(f.read(), format="audio/mp3")
