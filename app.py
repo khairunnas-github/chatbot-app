@@ -1,31 +1,29 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 import pyttsx3
 import base64
 from io import BytesIO
-
-# Optional: Untuk PDF parsing
 from PyPDF2 import PdfReader
 
-# Load API Key dari Streamlit Secrets
-openai.api_key = st.secrets["OPENAI_API_KEY"]
+# Setup OpenAI Client
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# Setup tampilan halaman
-st.set_page_config(page_title="🤖 AI Chatbot", page_icon="💬")
-st.title("🤖 Chatbot AI Cerdas dengan Upload File + Suara")
+# Setup halaman
+st.set_page_config(page_title="🤖 Chatbot AI", page_icon="💬")
+st.title("🤖 Chatbot AI Cerdas + Upload File + Suara")
 
 # Inisialisasi sesi
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Tombol Reset Chat
+# Tombol Reset
 with st.sidebar:
     st.header("⚙️ Opsi")
     if st.button("🔄 Reset Chat"):
         st.session_state.messages = []
         st.experimental_rerun()
 
-# Upload File
+# Upload file
 file_text = ""
 uploaded_file = st.file_uploader("📎 Upload file (txt/pdf)", type=["txt", "pdf"])
 if uploaded_file:
@@ -47,13 +45,14 @@ for msg in st.session_state.messages:
             unsafe_allow_html=True
         )
 
-# Input Pengguna
+# Input pengguna
 if prompt := st.chat_input("Ketik sesuatu..."):
 
     # Tambahkan konteks file jika ada
     if file_text:
         prompt = f"Berdasarkan file berikut:\n{file_text[:3000]}\n\nPertanyaan: {prompt}"
 
+    # Simpan pesan user
     st.session_state.messages.append({"role": "user", "content": prompt})
 
     # Tampilkan pesan user
@@ -66,31 +65,30 @@ if prompt := st.chat_input("Ketik sesuatu..."):
     # Kirim ke OpenAI
     with st.chat_message("assistant"):
         with st.spinner("🤖 Bot sedang mengetik..."):
-            response = openai.ChatCompletion.create(
+            response = client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
                     {"role": m["role"], "content": m["content"]}
                     for m in st.session_state.messages
                 ]
             )
-            reply = response.choices[0].message["content"]
+            reply = response.choices[0].message.content
 
-            # Tampilkan balasan bot
+            # Tampilkan balasan
             st.markdown(
                 f"<div style='text-align: left; background-color: #F1F0F0; padding: 10px; border-radius: 10px; margin: 5px 0;'>{reply}</div>",
                 unsafe_allow_html=True
             )
 
-            # Simpan balasan ke sesi
+            # Tambahkan ke chat history
             st.session_state.messages.append({"role": "assistant", "content": reply})
 
-            # Text-to-Speech
+            # Text to Speech
             tts_engine = pyttsx3.init()
-            mp3_fp = BytesIO()
             tts_engine.save_to_file(reply, "bot_audio.mp3")
             tts_engine.runAndWait()
 
             # Putar audio
-            audio_file = open("bot_audio.mp3", "rb")
-            audio_bytes = audio_file.read()
-            st.audio(audio_bytes, format="audio/mp3")
+            with open("bot_audio.mp3", "rb") as audio_file:
+                audio_bytes = audio_file.read()
+                st.audio(audio_bytes, format="audio/mp3")
